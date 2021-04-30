@@ -1,9 +1,3 @@
-/**
- * particle_filter.cpp
- *
- * Created on: Dec 12, 2016
- * Author: Tiffany Huang
- */
 
 #include "particle_filter.h"
 
@@ -19,8 +13,6 @@
 #include "helper_functions.h"
 
 using namespace std;
-using string;
-using vector;
 
 // declaring a global random engine
 static default_random_engine engine;
@@ -107,18 +99,18 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted, vector<Landm
    *   during the updateWeights phase.
    */
 
-  for (int i = 0; i < observations.size(); i++) {
+  for (unsigned int i = 0; i < observations.size(); i++) {
     // set the minimum distance to maximum possible limit
     double minimum_distance = numeric_limits<double>::max();
     
-    for (int j = 0; j < predicted.size(); j++) {
+    for (unsigned int j = 0; j < predicted.size(); j++) {
       // set the distance between current and predicted landmarks
-      double current_distance = dist(observations[i].x, observations[i].y, predicted[i].x, predicted[i].y);
+      double current_distance = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
 
       // find the predicted landmark nearest the current observed landmark
       if (minimum_distance > current_distance) {
         minimum_distance = current_distance;
-        observations[i].id = predicted[i].id;
+        observations[i].id = predicted[j].id;
       }
     }
   }
@@ -151,7 +143,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], c
     // new vector containing the map landmark locations predicted to be within the sensor range of the particle
     vector<LandmarkObs> predictions;
 
-    for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
+    for (unsigned int j = 0; j < map_landmarks.landmark_list.size(); j++) {
 
       // computing the landmark id, x and y coordinates
       double landmark_x = map_landmarks.landmark_list[j].x_f;
@@ -171,7 +163,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], c
     double cos_theta = cos(particle_theta);
     double sin_theta = sin(particle_theta);
 
-    for (int j = 0; j < observations.size(); j++) {
+    for (unsigned int j = 0; j < observations.size(); j++) {
       double tmp_x = observations[j].x * cos_theta - observations[j].y * sin_theta + particle_x;
       double tmp_y = observations[j].x * sin_theta + observations[j].y * cos_theta + particle_y;
       //tmp.id = obs.id; // maybe an unnecessary step, since the each obersation will get the id from dataAssociation step.
@@ -186,7 +178,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], c
     // weight re-initialization
     particles[i].weight = 1.0;
 
-    for (int j = 0; j < observations_map.size(); j++) {
+    for (unsigned int j = 0; j < observations_map.size(); j++) {
 
       // computing observation and associated prediction coordinates
       double observations_x, observations_y, predictions_x, predictions_y;
@@ -196,7 +188,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], c
       int associated_prediction = observations_map[j].id;
 
       // computing the x and y coordinates of the prediction associated with the current observation
-      for (int k = 0; k < predictions.size(); k++) {
+      for (unsigned int k = 0; k < predictions.size(); k++) {
         if (predictions[k].id == associated_prediction) {
           predictions_x = predictions[k].x;
           predictions_y = predictions[k].y;
@@ -227,7 +219,7 @@ void ParticleFilter::resample() {
   }
 
   // compute a random starting index for resampling wheel
-  discrete_distribution<> discrete_int_dist(weights.begin(), weights.end());
+  discrete_distribution<> discrete_int_dist(0, num_particles-1);
   int index = discrete_int_dist(engine);
 
   // compute the max weight
