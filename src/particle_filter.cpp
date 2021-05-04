@@ -1,6 +1,4 @@
 
-#include "particle_filter.h"
-
 #include <math.h>
 #include <algorithm>
 #include <iostream>
@@ -10,7 +8,10 @@
 #include <string>
 #include <vector>
 
+#include "particle_filter.h"
 #include "helper_functions.h"
+
+#define EPS 0.00001
 
 using namespace std;
 
@@ -27,7 +28,6 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    *   (and others in this file).
    */
   num_particles = 100;  // TODO: Set the number of particles
-
 
   normal_distribution<double> dist_init_x(x, std[0]);
   normal_distribution<double> dist_init_y(y, std[1]);
@@ -53,7 +53,6 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
   // initialization done
   is_initialized = true;
-
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
@@ -105,16 +104,17 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted, vector<Landm
     
     for (unsigned int j = 0; j < predicted.size(); j++) {
       // set the distance between current and predicted landmarks
-      double current_distance = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
+      double xDist = observations[i].x - predicted[j].x;
+      double yDist = observations[i].y - predicted[j].y;
+      double current_distance = xDist * xDist + yDist * yDist;
 
       // find the predicted landmark nearest the current observed landmark
-      if (minimum_distance > current_distance) {
+      if (current_distance < minimum_distance) {
         minimum_distance = current_distance;
         observations[i].id = predicted[j].id;
       }
     }
   }
-
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], const vector<LandmarkObs> &observations, const Map &map_landmarks) {
@@ -152,7 +152,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], c
       
       // computing distance between landmark and particle and considering only landmarks within sensor range of the particle
       if ( dist(particle_x, particle_y, landmark_x, landmark_y) <= sensor_range ) {
-
         // add prediction to vector
         predictions.push_back(LandmarkObs{ landmark_id, landmark_x, landmark_y });
       }
@@ -166,18 +165,16 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], c
     for (unsigned int j = 0; j < observations.size(); j++) {
       double tmp_x = observations[j].x * cos_theta - observations[j].y * sin_theta + particle_x;
       double tmp_y = observations[j].x * sin_theta + observations[j].y * cos_theta + particle_y;
-      //tmp.id = obs.id; // maybe an unnecessary step, since the each obersation will get the id from dataAssociation step.
       observations_map.push_back(LandmarkObs{ observations[j].id, tmp_x, tmp_y });
     }
 
     // 3 --> computing the landmark index for each observation
     dataAssociation(predictions, observations_map);
 
-    // 3 --> computing the particle's weight:
-
     // weight re-initialization
     particles[i].weight = 1.0;
 
+    // 4 --> computing the particle's weight:
     for (unsigned int j = 0; j < observations_map.size(); j++) {
 
       // computing observation and associated prediction coordinates
@@ -197,8 +194,20 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], c
 
       double x_term = pow(observations_x - predictions_x, 2) / (2 * pow(std_landmark[0], 2));
       double y_term = pow(observations_y - predictions_y, 2) / (2 * pow(std_landmark[1], 2));
-      double w = exp(-(x_term + y_term)) / (2 * M_PI * std_landmark[0] * std_landmark[1]);
-      particles[i].weight *=  w;
+      double w = ( 1/(2 * M_PI * std_landmark[0] * std_landmark[1])) * exp(-(x_term + y_term));
+      double tmp_w = particles[i].weight;
+
+      if (w == 0) {
+        tmp_w *= EPS;
+      } else {
+        tmp_w *= w;
+      }
+      
+      if (tmp_w == 0) {
+        tmp_w = std::numeric_limits<double>::min();
+      }
+
+      particles[i].weight = tmp_w;
     }
   }
 }
@@ -210,29 +219,31 @@ void ParticleFilter::resample() {
    */
 
   vector<Particle> new_particles;
-  new_particles.resize(num_particles);
-
+  
   // get all the current weights
   vector<double> weights;
+  double max_weight = numeric_limits<double>::min();
   for (int i = 0; i < num_particles; i++) {
     weights.push_back(particles[i].weight);
+
+    // computing the max weight
+    if(particles[i].weight > max_weight) {
+      max_weight = particles[i].weight;
+    }
   }
 
-  // compute a random starting index for resampling wheel
-  discrete_distribution<> discrete_int_dist(0, num_particles-1);
-  int index = discrete_int_dist(engine);
+  // computing a random starting index for resampling wheel
+  uniform_int_distribution<int> uniform_int_dist(0, num_particles-1);
+  int index = uniform_int_dist(engine);
 
-  // compute the max weight
-  double max_weight = *max_element(weights.begin(), weights.end());
-
-  // compute a random distribution [0.0, max_weight)
-  discrete_distribution<> discrete_real_dist(0.0, max_weight);
+  // computing a random distribution [0.0, max_weight)
+  uniform_real_distribution<double> uniform_real_dist(0.0, max_weight);
 
   double beta = 0.0;
 
-  // spin the resample wheel!
+  // spining the resample wheel!
   for (int i = 0; i < num_particles; i++) {
-    beta += discrete_real_dist(engine) * 2.0;
+    beta += uniform_real_dist(engine) * 2.0;
     while (beta > weights[index]) {
       beta -= weights[index];
       index = (index + 1) % num_particles;
@@ -241,7 +252,6 @@ void ParticleFilter::resample() {
   }
 
   particles = new_particles;
-
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, 
@@ -253,6 +263,12 @@ void ParticleFilter::SetAssociations(Particle& particle,
   // associations: The landmark id that goes along with each listed association
   // sense_x: the associations x mapping already converted to world coordinates
   // sense_y: the associations y mapping already converted to world coordinates
+
+  //Clear the previous associations
+  particle.associations.clear();
+  particle.sense_x.clear();
+  particle.sense_y.clear();
+
   particle.associations= associations;
   particle.sense_x = sense_x;
   particle.sense_y = sense_y;
